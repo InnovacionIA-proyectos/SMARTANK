@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Capa Application: casos de uso (handlers de Commands/Queries), puertos (interfaces) hacia Infrastructure,
+    DTOs y Unit of Work. No conoce ASP.NET Core ni Entity Framework: solo Domain.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Smartank.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Smartank.Domain\Smartank.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Solo las ABSTRACCIONES de DI/Options/Logging: los metodos AddXUseCases() de cada modulo se registran con ellas. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>

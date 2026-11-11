@@ -1,0 +1,20 @@
+# Que NO entra al contexto de build de Docker del backend (el contexto es la carpeta /backend).
+
+# Artefactos de compilacion. Se generan dentro del contenedor; copiarlos desde el host pisaria el resultado del
+# restore de la imagen y mezclaria binarios de Windows con un build de Linux.
+**/bin/
+**/obj/
+
+# Resultados de pruebas locales.
+**/TestResults/
+
+# Configuracion local y secretos. Nunca entran a una imagen.
+.env
+.env.*
+!.env.example
+**/appsettings.*.local.json
+
+# Tooling del IDE.
+.vs/
+**/*.user
+**/*.suo

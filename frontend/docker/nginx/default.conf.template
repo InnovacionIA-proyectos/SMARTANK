@@ -1,0 +1,148 @@
+# Plantilla de nginx para SMARTANK (frontend Angular).
+#
+# La imagen oficial procesa /etc/nginx/templates/*.template con envsubst al arrancar y
+# escribe el resultado en /etc/nginx/conf.d/. NGINX_ENVSUBST_FILTER limita la sustitución
+# a las variables API_UPSTREAM y DNS_RESOLVER: el resto de los `$` (variables propias de
+# nginx como $host o $uri) pasan intactos.
+#
+#   API_UPSTREAM  Origen del API, con esquema y puerto y SIN ruta final
+#                 (p. ej. http://smartank-api:8080).
+#   DNS_RESOLVER  Servidor DNS para resolver API_UPSTREAM en tiempo de ejecución
+#                 (127.0.0.11 es el DNS interno de Docker/Swarm, el que usa Dokploy).
+
+# Esquema original de la petición: detrás de un proxy TLS (Traefik en Dokploy) el
+# esquema real llega en X-Forwarded-Proto; sin proxy se usa el de esta conexión.
+map $http_x_forwarded_proto $smartank_forwarded_proto {
+    default $http_x_forwarded_proto;
+    ''      $scheme;
+}
+
+server {
+    listen 8080;
+    listen [::]:8080;
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    server_tokens off;
+
+    # Fotos de surtidor de hasta 5 MB (más el sobre de la petición).
+    client_max_body_size 8m;
+
+    # El API se resuelve al momento de cada petición (y no al arrancar nginx): si el
+    # contenedor del API aún no existe, el frontend arranca igual y responde 502 hasta
+    # que el API esté disponible, en lugar de fallar en bucle.
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+
+    # ── Compresión ───────────────────────────────────────────────────────────
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 5;
+    gzip_min_length 1024;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        application/json
+        application/javascript
+        text/javascript
+        application/xml
+        application/manifest+json
+        image/svg+xml
+        font/ttf;
+
+    # ── Cabeceras de seguridad (se repiten en cada location que añade cabeceras,
+    #    porque add_header en un location anula las heredadas del server) ──────
+    include /etc/nginx/snippets/security-headers.conf;
+
+    # ── Sondeo de salud del propio nginx (no depende del API) ───────────────────
+    location = /nginx-health {
+        access_log off;
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    # ── API y salud del backend ─────────────────────────────────────────────────
+    location ^~ /api/ {
+        set $smartank_api "${API_UPSTREAM}";
+        # Sin ruta en proxy_pass: nginx reenvía la URI original tal cual (con query).
+        proxy_pass $smartank_api;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $smartank_forwarded_proto;
+        proxy_set_header X-Forwarded-Host $host;
+
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+
+        # Las respuestas del API nunca se cachean en el navegador ni en intermediarios.
+        add_header Cache-Control "no-store" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    location = /health {
+        set $smartank_api "${API_UPSTREAM}";
+        proxy_pass $smartank_api;
+
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $smartank_forwarded_proto;
+        proxy_set_header X-Forwarded-Host $host;
+
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 10s;
+
+        add_header Cache-Control "no-store" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # ── Recursos estáticos ──────────────────────────────────────────────────────
+    # Archivos con hash en el nombre (chunks, main, styles y media/): inmutables.
+    location ~* ^/(?:chunk|main|polyfills|styles)-[A-Za-z0-9_-]+\.(?:js|css)$ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    location ^~ /media/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Archivos de public/ (logos, fondo, favicon): sin hash, caché corta.
+    location ~* \.(?:png|jpe?g|webp|svg|ico|woff2?|ttf|txt|json|webmanifest)$ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=86400" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Un recurso con extensión que no existe es un 404 real; no debe caer al index.html
+    # (un chunk viejo devuelto como HTML rompería la aplicación con errores de sintaxis).
+    location ~* \.(?:js|css|map)$ {
+        try_files $uri =404;
+    }
+
+    # index.html jamás se cachea: es lo que referencia los archivos con hash del build.
+    location = /index.html {
+        add_header Cache-Control "no-cache" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+
+    # Fallback de la SPA: cualquier ruta del enrutador de Angular sirve index.html.
+    location / {
+        try_files $uri /index.html;
+        add_header Cache-Control "no-cache" always;
+        include /etc/nginx/snippets/security-headers.conf;
+    }
+}

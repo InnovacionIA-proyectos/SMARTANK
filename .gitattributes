@@ -1,0 +1,20 @@
+# Normaliza terminadores de linea: todo texto se guarda en el repo como LF, sin importar en que SO se edite
+# (evita diffs completos de un archivo por CRLF/LF que no son cambios reales).
+* text=auto eol=lf
+
+# Scripts de Windows que si necesitan CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binarios explicitos: nunca se tocan los line endings.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
+*.pfx binary
+*.dll binary
+*.so binary

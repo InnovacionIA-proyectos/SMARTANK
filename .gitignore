@@ -1,0 +1,34 @@
+# .NET: artefactos de compilacion
+bin/
+obj/
+*.user
+.vs/
+*.suo
+**/TestResults/
+*.log
+
+# Configuracion local y secretos: NUNCA se versionan
+.env
+.env.*
+!.env.example
+!.env.dokploy
+!.env.githubSECRETS
+appsettings.*.local.json
+
+# Frontend (Angular)
+node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/coverage/
+frontend/.vite/
+
+# Override local de Docker Compose (puertos/ajustes propios de una maquina)
+docker-compose.override.yml
+
+# Configuracion local de Claude Code (permisos, hosts internos)
+.claude/
+
+# Temporales y sistema operativo
+*.tmp
+Thumbs.db
+.DS_Store

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Capa Domain (Clean Architecture): entidades, enums, value objects y reglas de negocio puras.
+    No depende de ningun otro proyecto ni de frameworks de infraestructura.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Smartank.Domain</RootNamespace>
+  </PropertyGroup>
+
+</Project>

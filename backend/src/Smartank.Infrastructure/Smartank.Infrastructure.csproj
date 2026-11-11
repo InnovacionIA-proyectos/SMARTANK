@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Capa Infrastructure (Adapters Out): EF Core + SQL Server 2019 (BD propia), Dapper (SQL Server legado de solo lectura),
+    clientes HTTP (Geotab, WhatsApp, precios, EDS), hash de contrasenas y firma de tokens.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Smartank.Infrastructure</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.0" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
+    <!-- Fija una version parcheada del paquete transitivo (advisories NU1902/NU1903 de la 9.0.4). -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.15" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Smartank.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Smartank.Domain\Smartank.Domain.csproj" />
+    <ProjectReference Include="..\Smartank.Application\Smartank.Application.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    Capa Api (Adapters In): controllers finos, autenticacion/autorizacion, middlewares, mapeo HTTP <-> Commands/Queries.
+    Referencia Infrastructure SOLO como composition root (DI en clsProgram.cs): los controllers no usan tipos de Infrastructure.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Smartank.Api</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Smartank.Application\Smartank.Application.csproj" />
+    <ProjectReference Include="..\Smartank.Infrastructure\Smartank.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

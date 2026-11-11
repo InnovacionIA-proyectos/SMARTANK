@@ -1,0 +1,152 @@
+# SMARTANK - entorno local / desarrollo / QA con Docker Compose.
+#
+# NO se usa para el despliegue en Dokploy: alli cada servicio es una app tipo "Application" (Dockerfile) independiente y
+# las variables se cargan en su pestaña Environment (ver DOKPLOY.md y .env.dokploy).
+#
+# Uso:
+#   cp .env.example .env        (completa los valores marcados como obligatorios)
+#   docker compose up --build
+#
+# Servicios:
+#   db        SQL Server 2019 (solo para local/QA; produccion usa un servidor corporativo)
+#   db-init   crea la base y aplica Database/ddl.sql + seed_estaciones.sql la primera vez (idempotente)
+#   api       ASP.NET 10                -> http://localhost:8080  (swagger en /swagger si el entorno es Development)
+#   worker    sincronizaciones programadas (sin puertos)
+#   frontend  Angular 22 sobre nginx    -> http://localhost:4200  (proxy de /api hacia el servicio api)
+
+name: smartank
+
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      # Developer es gratuita y solo para desarrollo/pruebas. En produccion se usa una instancia licenciada.
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${DB_SA_PASSWORD:?Defina DB_SA_PASSWORD en .env}
+    ports:
+      - "${DB_PUERTO:-14333}:1433"
+    volumes:
+      - smartank_sqldata:/var/opt/mssql
+    healthcheck:
+      # La imagen 2019 trae mssql-tools18 (exige -C); si fuera una version antigua cae a mssql-tools.
+      test: ["CMD-SHELL", "S=/opt/mssql-tools18/bin/sqlcmd; [ -x $$S ] || S=/opt/mssql-tools/bin/sqlcmd; $$S -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q \"SELECT 1\" -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  db-init:
+    # Misma imagen que la base: ya trae sqlcmd, no hace falta bajar otra imagen de herramientas.
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    user: root
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_SA_PASSWORD: ${DB_SA_PASSWORD:?Defina DB_SA_PASSWORD en .env}
+      DB_NOMBRE: ${DB_NOMBRE:-Smartank}
+      DB_CARGAR_ESTACIONES: ${DB_CARGAR_ESTACIONES:-true}
+    volumes:
+      - ./Database:/database:ro
+    entrypoint: ["/bin/bash", "/database/scripts/inicializar-db.sh"]
+    restart: "no"
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: src/Smartank.Api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__Smartank: Server=db,1433;Database=${DB_NOMBRE:-Smartank};User Id=sa;Password=${DB_SA_PASSWORD};Encrypt=False;TrustServerCertificate=True;
+      Database__Esquema: ${DATABASE_ESQUEMA:-dbo}
+      Jwt__Secret: ${JWT_SECRET:?Defina JWT_SECRET en .env}
+      Jwt__ExpiraHoras: ${JWT_EXPIRA_HORAS:-12}
+      Seguridad__BcryptRounds: ${SEGURIDAD_BCRYPT_ROUNDS:-12}
+      Cookie__Secure: ${COOKIE_SECURE:-false}
+      Bitacora__Secret: ${BITACORA_SECRET:?Defina BITACORA_SECRET en .env}
+      Bitacora__ExpiraHoras: ${BITACORA_EXPIRA_HORAS:-24}
+      Servicio__Secreto: ${SERVICIO_SECRETO:?Defina SERVICIO_SECRETO en .env}
+      Cors__OrigenesPermitidos: ${CORS_ORIGENES:-http://localhost:4200}
+      App__UrlPublica: ${APP_URL_PUBLICA:-http://localhost:4200}
+      ConnectionStrings__Fpsap: ${FPSAP_CONNECTION:-}
+      ConnectionStrings__Ebs: ${EBS_CONNECTION:-}
+      Whatsapp__ApiUrl: ${WHATSAPP_API_URL:-}
+      Whatsapp__ApiKey: ${WHATSAPP_API_KEY:-}
+      Whatsapp__DelayMs: ${WHATSAPP_DELAY_MS:-1200}
+      Whatsapp__ModoPrueba: ${WHATSAPP_MODO_PRUEBA:-false}
+      Whatsapp__NumeroPrueba: ${WHATSAPP_NUMERO_PRUEBA:-}
+      Eds__ApiBaseUrl: ${EDS_API_BASE_URL:-}
+      Eds__ApiKey: ${EDS_API_KEY:-}
+      Eds__WebhookSecret: ${EDS_WEBHOOK_SECRET:-}
+      Precios__ApiBaseUrl: ${PRECIOS_API_BASE_URL:-}
+      Precios__ApiKey: ${PRECIOS_API_KEY:-}
+      ParametrosNegocio__ToleranciaAutonomiaDefault: ${TOLERANCIA_AUTONOMIA_DEFAULT:-0.02}
+      ParametrosNegocio__UmbralGalonFantasma: ${UMBRAL_GALON_FANTASMA:-0.05}
+      ParametrosNegocio__UmbralDesviacionConsumo: ${UMBRAL_DESVIACION_CONSUMO:-0.10}
+      ParametrosNegocio__RendimientoDefaultKmGal: ${RENDIMIENTO_DEFAULT_KM_GAL:-8}
+      ParametrosNegocio__DefaultGalonesAutorizacion: ${DEFAULT_GALONES_AUTORIZACION:-40}
+      ParametrosNegocio__NivelMaxAntiguedadHoras: ${NIVEL_MAX_ANTIGUEDAD_HORAS:-168}
+    ports:
+      - "${API_PUERTO:-8080}:8080"
+    healthcheck:
+      # Sin curl en la imagen: peticion HTTP minima con bash (/dev/tcp) y se exige "200" en la linea de estado.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3 && head -n1 <&3 | grep -q ' 200 '"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: src/Smartank.Worker/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    environment:
+      DOTNET_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      ConnectionStrings__Smartank: Server=db,1433;Database=${DB_NOMBRE:-Smartank};User Id=sa;Password=${DB_SA_PASSWORD};Encrypt=False;TrustServerCertificate=True;
+      Database__Esquema: ${DATABASE_ESQUEMA:-dbo}
+      ConnectionStrings__Fpsap: ${FPSAP_CONNECTION:-}
+      ConnectionStrings__Ebs: ${EBS_CONNECTION:-}
+      Geotab__Database: ${GEOTAB_DATABASE:-}
+      Geotab__Username: ${GEOTAB_USERNAME:-}
+      Geotab__Password: ${GEOTAB_PASSWORD:-}
+      Geotab__Server: ${GEOTAB_SERVER:-my.geotab.com}
+      Precios__ApiBaseUrl: ${PRECIOS_API_BASE_URL:-}
+      Precios__ApiKey: ${PRECIOS_API_KEY:-}
+      Sync__IntervaloSegundos: ${SYNC_INTERVALO_SEGUNDOS:-300}
+      Sync__DiarioAlIniciar: ${SYNC_DIARIO_AL_INICIAR:-true}
+      Sync__RutaDaneFallback: ${SYNC_RUTA_DANE_FALLBACK:-false}
+      Sync__FosDesde: ${SYNC_FOS_DESDE:-2026-01-01}
+      Sync__TanqueosDesde: ${SYNC_TANQUEOS_DESDE:-2026-01-01}
+      Sync__RutasDesde: ${SYNC_RUTAS_DESDE:-2026-01-01}
+      Sync__RutaReduceTolMetros: ${SYNC_RUTA_REDUCE_TOL_METROS:-30}
+      Sync__VentanaNivelHoras: ${SYNC_VENTANA_NIVEL_HORAS:-168}
+      Sync__RendimientoVentanaDias: ${SYNC_RENDIMIENTO_VENTANA_DIAS:-60}
+      Sync__RutaEdsUmbralKm: ${SYNC_RUTA_EDS_UMBRAL_KM:-5}
+      ParametrosNegocio__RendimientoDefaultKmGal: ${RENDIMIENTO_DEFAULT_KM_GAL:-8}
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      # Hostname interno del API. En Dokploy es el nombre interno que asigna a la app del API.
+      API_UPSTREAM: http://api:8080
+    ports:
+      - "${FRONTEND_PUERTO:-4200}:8080"
+
+volumes:
+  smartank_sqldata:

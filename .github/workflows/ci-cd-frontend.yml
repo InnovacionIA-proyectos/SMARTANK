@@ -1,0 +1,80 @@
+name: CI/CD Frontend (Angular)
+
+# Solo dispara por cambios del frontend (Angular 22), nunca por cambios exclusivos de backend/, que tiene su propio
+# workflow (ci-cd-backend.yml).
+on:
+  push:
+    branches: [main, DEPLOY]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ci-cd-frontend.yml"
+  pull_request:
+    branches: [main, DEPLOY]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ci-cd-frontend.yml"
+
+# El frontend no usa la base de pruebas: basta con no solapar corridas de la misma rama (un push nuevo cancela el
+# build anterior de ese PR/rama, salvo que ya este desplegando).
+concurrency:
+  group: ci-cd-frontend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-test:
+    # Self-hosted por consistencia con el backend (mismo runner, mismo entorno). Solo tiene Windows PowerShell
+    # (ejecucion de scripts restringida) y cmd: sin este default, un "run:" sin "shell:" falla.
+    runs-on: [self-hosted, dokploy_]
+    defaults:
+      run:
+        shell: cmd
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      # Angular 22 exige Node ^22.22.3 || ^24.15.0 || >=26. setup-node instala en runner.tool_cache (escribible por la
+      # cuenta del runner).
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependencias (npm ci)
+        run: npm ci
+
+      - name: Revisar dependencias vulnerables (informativo)
+        run: npm audit --omit=dev --audit-level=high || echo "npm audit reporto hallazgos: revisar el log."
+
+      - name: Compilar (produccion)
+        run: npm run build
+
+      # CI=true evita el modo watch del runner de pruebas de Angular.
+      - name: Ejecutar pruebas
+        env:
+          CI: "true"
+        run: npm test
+
+  # El despliegue depende de que build y pruebas hayan pasado en ESTE commit. Solo en push directo (no en PRs).
+  # Dokploy construye con frontend/Dockerfile al recibir el webhook.
+  deploy:
+    needs: build-and-test
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/DEPLOY') && github.event_name == 'push'
+    runs-on: [self-hosted, dokploy_]
+    steps:
+      - name: Mostrar informacion del deploy
+        shell: cmd
+        run: |
+          echo Servicio: Frontend
+          echo Branch: ${{ github.ref }}
+          echo Commit: ${{ github.sha }}
+          echo Evento: ${{ github.event_name }}
+
+      - name: Disparar despliegue en Dokploy (servicio Frontend)
+        shell: cmd
+        run: |
+          curl -f -X POST "${{ secrets.DOKPLOY_DEPLOY_WEBHOOK_URL_FRONTEND }}" ^
+            -H "Content-Type: application/json" ^
+            -H "X-GitHub-Event: push" ^
+            -d "{\"ref\":\"${{ github.ref }}\",\"repository\":{\"full_name\":\"${{ github.repository }}\"}}"

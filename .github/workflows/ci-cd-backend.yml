@@ -1,0 +1,128 @@
+name: CI/CD Backend (API y Worker)
+
+# Solo dispara por cambios que puedan afectar al backend (.NET), nunca por cambios exclusivos de frontend/, que tiene su
+# propio workflow (ci-cd-frontend.yml). El API y el Worker comparten el mismo codigo (Domain, Application, Infrastructure),
+# asi que una sola corrida compila y prueba una vez y luego despliega ambos servicios en Dokploy.
+on:
+  push:
+    branches: [main, DEPLOY]
+    paths:
+      - "backend/**"
+      - ".github/workflows/ci-cd-backend.yml"
+  pull_request:
+    branches: [main, DEPLOY]
+    paths:
+      - "backend/**"
+      - ".github/workflows/ci-cd-backend.yml"
+
+# Todas las corridas usan la MISMA base de pruebas real: dos a la vez (el PR y el push, o un reintento) se pisan y dan
+# fallos que no son del codigo.
+concurrency:
+  group: ci-cd-backend-base-de-pruebas
+  cancel-in-progress: false
+
+jobs:
+  # Self-hosted: TEST_DB_CONNECTION apunta a una base SQL Server real de la red corporativa privada, inalcanzable desde un
+  # runner en la nube de GitHub. No es una base descartable ni un contenedor efimero.
+  build-and-test:
+    runs-on: [self-hosted, dokploy_]
+    # Este runner solo tiene Windows PowerShell (ejecucion de scripts restringida) y cmd, no pwsh. Sin este default, un
+    # "run:" sin "shell:" cae en PowerShell y falla con "la ejecucion de scripts esta deshabilitada en este sistema".
+    defaults:
+      run:
+        shell: cmd
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      # DOTNET_INSTALL_DIR explicito: por defecto setup-dotnet instala en "C:\Program Files\dotnet", donde la cuenta del
+      # runner (dokploy_) no tiene permiso de escritura. runner.tool_cache si es escribible; el paso siguiente agrega esa
+      # carpeta al PATH porque setup-dotnet solo lo hace para la ubicacion por defecto.
+      - name: Instalar .NET SDK
+        uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Agregar dotnet al PATH
+        shell: cmd
+        run: echo ${{ runner.tool_cache }}\dotnet>>"%GITHUB_PATH%"
+
+      - name: Restaurar dependencias
+        run: dotnet restore Smartank.sln
+
+      - name: Compilar (Release)
+        run: dotnet build Smartank.sln -c Release --no-restore
+
+      # Informativo: lista paquetes NuGet con vulnerabilidades conocidas (directos y transitivos). No bloquea la corrida;
+      # el aviso queda visible en el log para decidir la actualizacion.
+      - name: Revisar paquetes vulnerables
+        run: dotnet list Smartank.sln package --vulnerable --include-transitive
+
+      # Smartank.Api.Tests corre contra la BD de pruebas REAL de la red corporativa (nunca un contenedor efimero);
+      # TEST_DB_CONNECTION es un secreto de GitHub, nunca un valor en el repo. El .sln completo se corre sin filtro para
+      # que un proyecto de test nuevo entre solo.
+      #
+      # CRITICO: el fixture de las pruebas NUNCA debe llamar Database.EnsureDeleted() mientras TEST_DB_CONNECTION apunte a
+      # esta base, o este workflow la borraria. El esquema NO lo crea la aplicacion ni las pruebas: se crea una vez a mano
+      # con Database/ddl.sql (no hay migraciones de EF).
+      #
+      # No hay service container de SQL Server: la base ya esta corriendo y es alcanzable desde el runner.
+      #
+      # Las conexiones al SQL Server legado (SOLO LECTURA) son OPCIONALES: sin ellas la aplicacion degrada esas funciones
+      # con un 503 accionable y las pruebas ejercitan el camino degradado, no las fuentes reales. Se definen con el nombre
+      # que lee IConfiguration (ConnectionStrings__*, doble guion bajo). Un secreto inexistente llega como cadena vacia.
+      - name: "Ejecutar toda la suite (dotnet test Smartank.sln)"
+        env:
+          TEST_DB_CONNECTION: ${{ secrets.TEST_DB_CONNECTION }}
+          ConnectionStrings__Fpsap: ${{ secrets.CONNECTIONSTRINGS_FPSAP }}
+          ConnectionStrings__Ebs: ${{ secrets.CONNECTIONSTRINGS_EBS }}
+          Database__Esquema: ${{ secrets.DATABASE_ESQUEMA }}
+        run: dotnet test Smartank.sln -c Release --no-build --logger "console;verbosity=normal"
+
+  # El despliegue depende de que la suite haya pasado en ESTE commit. Solo en push directo (no en PRs).
+  # Dokploy construye con el Dockerfile de cada servicio al recibir el webhook.
+  deploy-api:
+    needs: build-and-test
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/DEPLOY') && github.event_name == 'push'
+
+    # Self-hosted: unico lugar desde el que se alcanza el webhook de Dokploy (inalcanzable desde ubuntu-latest).
+    runs-on: [self-hosted, dokploy_]
+    steps:
+      - name: Mostrar informacion del deploy
+        shell: cmd
+        run: |
+          echo Servicio: API
+          echo Branch: ${{ github.ref }}
+          echo Commit: ${{ github.sha }}
+          echo Evento: ${{ github.event_name }}
+
+      - name: Disparar despliegue en Dokploy (servicio API)
+        shell: cmd
+        run: |
+          curl -f -X POST "${{ secrets.DOKPLOY_DEPLOY_WEBHOOK_URL_API }}" ^
+            -H "Content-Type: application/json" ^
+            -H "X-GitHub-Event: push" ^
+            -d "{\"ref\":\"${{ github.ref }}\",\"repository\":{\"full_name\":\"${{ github.repository }}\"}}"
+
+  deploy-worker:
+    needs: build-and-test
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/DEPLOY') && github.event_name == 'push'
+    runs-on: [self-hosted, dokploy_]
+    steps:
+      - name: Mostrar informacion del deploy
+        shell: cmd
+        run: |
+          echo Servicio: Worker
+          echo Branch: ${{ github.ref }}
+          echo Commit: ${{ github.sha }}
+          echo Evento: ${{ github.event_name }}
+
+      - name: Disparar despliegue en Dokploy (servicio Worker)
+        shell: cmd
+        run: |
+          curl -f -X POST "${{ secrets.DOKPLOY_DEPLOY_WEBHOOK_URL_WORKER }}" ^
+            -H "Content-Type: application/json" ^
+            -H "X-GitHub-Event: push" ^
+            -d "{\"ref\":\"${{ github.ref }}\",\"repository\":{\"full_name\":\"${{ github.repository }}\"}}"

@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tokens de color del design system (docs/design_system.md).
+ * Modo claro en :root, modo oscuro en .dark (conmutable por el usuario).
+ */
+:root {
+  --font-inter: 'Inter Variable';
+  --color-primary: #0154ba;
+  --color-primary-hover: #014193;
+  --color-secondary: #234ca6;
+  --color-accent: #069e49;
+  --color-bg: #f4f6f9;
+  --color-surface: #ffffff;
+  --color-border: #d7dee7;
+  --color-text-primary: #0f1b2d;
+  --color-text-muted: #5b6b7f;
+  --color-success: #067a39;
+  --color-warning: #b45309;
+  --color-danger: #c62828;
+  --color-info: #0e7490;
+}
+
+.dark {
+  --color-primary: #2a6fd6;
+  --color-primary-hover: #3d82e8;
+  --color-secondary: #6b97e0;
+  --color-accent: #1fb562;
+  --color-bg: #0b1220;
+  --color-surface: #131c2b;
+  --color-border: #283648;
+  --color-text-primary: #e6edf5;
+  --color-text-muted: #9aaac0;
+  --color-success: #2ba862;
+  --color-warning: #d98a2b;
+  --color-danger: #ef5350;
+  --color-info: #38b6ce;
+}
+
+@layer base {
+  html {
+    @apply font-sans antialiased;
+  }
+
+  body {
+    @apply bg-bg text-text-primary;
+    font-feature-settings: 'cv11';
+  }
+
+  /* Columnas numéricas alineadas (galones, precios, porcentajes). */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Foco visible: outline de 2px en color secondary (accesibilidad). */
+  :focus-visible {
+    outline: 2px solid var(--color-secondary);
+    outline-offset: 2px;
+  }
+}
+
+/* Leaflet: los tooltips heredan la tipografía y el tema de la app. */
+.leaflet-container {
+  font-family: inherit;
+}
+
+/* Respetar prefers-reduced-motion (sin animaciones de tendencia). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

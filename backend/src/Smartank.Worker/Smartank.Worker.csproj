@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <!--
+    Host de procesos en segundo plano (segundo punto de entrada de la misma solucion): sincronizaciones programadas
+    contra el SQL Server legado y Geotab. Reutiliza Application + Infrastructure; no tiene logica propia.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Smartank.Worker</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Smartank.Application\Smartank.Application.csproj" />
+    <ProjectReference Include="..\Smartank.Infrastructure\Smartank.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

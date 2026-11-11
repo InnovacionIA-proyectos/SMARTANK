@@ -1,0 +1,39 @@
+# Salida de compilación
+/dist
+/tmp
+/out-tsc
+/coverage
+
+# Dependencias
+node_modules/
+npm-debug.log*
+yarn-error.log
+
+# Caché de Angular
+.angular/
+
+# Entornos locales (nunca versionar secretos)
+.env
+.env.*
+!.env.example
+
+# Editores
+.idea/
+.project
+.classpath
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+.history/
+
+# Pruebas
+testem.log
+__screenshots__/
+
+# Sistema
+.DS_Store
+Thumbs.db
